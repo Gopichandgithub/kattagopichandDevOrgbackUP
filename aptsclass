@@ -1,0 +1,803 @@
+/** ## @Capability:  RF-1092 : Development for IBM Cloud Usage Agreements To Populate Legal 
+    Entity Id / Apttus_Revenue2_LegalEntityId_c
+    ## @GitHub Repo: https://github.ibm.com/Gaia-Platform/DX-RevenueFinance
+    ## @Squad: RevFin
+**/
+public with sharing class APTS_UsageInputTriggerHandler {
+    /*public static Boolean onBeforeInsert = false;
+    public static Boolean onAfterInsert = false;
+    public static Boolean onBeforeUpdate = false;
+    public static Boolean onAfterUpdate = false;
+    public static Boolean onBeforeDelete = false;
+    public static Boolean onAfterDelete = false;
+    public static List<User> bssUsersList = new List<User>(); 
+    public static Map<Id, Id> revenueAdjustmentsMap = new Map<Id, Id>();
+    public static Set<Id> newlyInsertedAgreementFeeIds = new Set<Id>();
+
+    public static void onBeforeInsert(List <Apttus_Billing__UsageInput__c> newUsageInputList) {
+        if (!onBeforeInsert) {
+            onBeforeInsert = true;
+            evalBMXUsageInputLines(newUsageInputList);
+            relatedAgreementFee(newUsageInputList);
+            ratedUsgUpdate(newUsageInputList);
+        }
+    }
+
+    public static void onAfterInsert(List <Apttus_Billing__UsageInput__c> newUsageInputList) {
+        if (!onAfterInsert) {
+            onAfterInsert = true;
+            updateUsageOnAgreementFee(newUsageInputList, NULL, NULL);            
+            populateCompanyAndPartNumberForBSS(newUsageInputList);             
+            ensureUniqueBluemixChargeDataRec(newUsageInputList);
+            applyRevenueAdjustmentsForIBMCloud(newUsageInputList);
+        }
+    }
+
+    public static void onBeforeUpdate(List <Apttus_Billing__UsageInput__c> newUsageInputList, Map <Id, Apttus_Billing__UsageInput__c> newUsageInputMap, Map <Id, Apttus_Billing__UsageInput__c> oldUsageInputMap) {
+        if (!onBeforeUpdate) {
+            onBeforeUpdate = true;
+            applyYOYUpliftOnUsageInputRating(newUsageInputList, oldUsageInputMap);
+            evalBMXUsageInputLines(newUsageInputList);
+            relatedAgreementFee(newUsageInputList);
+            ratedUsgUpdate(newUsageInputList);
+        }
+    }
+
+    public static void onAfterUpdate(List <Apttus_Billing__UsageInput__c> newUsageInputList, Map <Id, Apttus_Billing__UsageInput__c> newUsageInputMap, Map <Id, Apttus_Billing__UsageInput__c> oldUsageInputMap) {
+        if (!onAfterUpdate) {
+            onAfterUpdate = true;
+            updateUsageOnAgreementFee(newUsageInputList, newUsageInputMap, oldUsageInputMap);
+            ensureUniqueBluemixChargeDataRec(newUsageInputList);
+            applyRevenueAdjustmentsForIBMCloud(newUsageInputList);
+        }
+    }
+
+    public static void onBeforeDelete(List <Apttus_Billing__UsageInput__c> oldUsageInputList) {
+        if (!onBeforeDelete) {
+            onBeforeDelete = true;
+        }
+    }
+
+    public static void onAfterDelete(List <Apttus_Billing__UsageInput__c> oldUsageInputList) {
+        if (!onAfterDelete) {
+            onAfterDelete = true;
+        }
+    }
+
+    /******************** PRIVATE METHODS *********************************/
+   /* public static void applyYOYUpliftOnUsageInputRating(List<Apttus_Billing__UsageInput__c> newUsageInputList, Map<Id, Apttus_Billing__UsageInput__c> oldUsageInputMap) {
+        
+        for (Apttus_Billing__UsageInput__c ui : newUsageInputList) {
+            if (ui.Apttus_Billing__Status__c == 'Rated' && oldUsageInputMap.get(ui.Id).Apttus_Billing__Status__c != 'Rated' && 
+                ui.APTS_AssetBlendedUpliftRate__c != null && ui.APTS_AssetBlendedUpliftRate__c > 0) {
+                ui.Apttus_Billing__RatedAmount__c = ui.Apttus_Billing__RatedAmount__c * ui.APTS_AssetBlendedUpliftRate__c;
+                
+               /* if(ui.APTS_AdjustmentAmount_Custom__c != null) {
+                    ui.Apttus_Billing__RatedAmount__c = ui.Apttus_Billing__RatedAmount__c * ((100-ui.APTS_AdjustmentAmount_Custom__c)/100);
+                }
+            }
+        }
+        
+    }*/
+    
+    /*public static void ensureUniqueBluemixChargeDataRec(List <Apttus_Billing__UsageInput__c> newUsageInputList) {
+        Set<String> uniques = new set<String>();
+        for (Apttus_Billing__UsageInput__c ui : newUsageInputList) {
+            if (ui.APTS_Company__c == 'Bluemix') {
+                uniques.add(ui.Apttus_Billing_ChargeDataRecordId__c);
+            }
+        }
+        uniques.remove(null); // just in case
+        if (!uniques.isEmpty()) {
+            for (Apttus_Billing__UsageInput__c ui : [select Id, Apttus_Billing_ChargeDataRecordId__c from Apttus_Billing__UsageInput__c where Apttus_Billing_ChargeDataRecordId__c in :uniques and APTS_Company__c = 'Bluemix']) {
+                if (!uniques.contains(ui.Apttus_Billing_ChargeDataRecordId__c)) {
+                    throw new UsageInputTriggerException(ui.Apttus_Billing_ChargeDataRecordId__c + ' is not unique for bluemix');
+                }
+                uniques.remove(ui.Apttus_Billing_ChargeDataRecordId__c);
+            }
+        }
+    }
+
+    @testvisible
+    private static void applyRevenueAdjustmentForIBMCloudHelper(List<Apttus_Revenue2__Agreement_Revenue_Adjustment_Schedule__c> revenueAdjustmentsList, Map<Id, Apttus_Revenue2__Agreement_Fee__c> agreementFeeMap, Apttus_Billing__UsageInput__c usgIp) {
+        if(usgIp.APTS_Company__c == 'Bluemix' && usgIp.Apttus_Billing__RatedAmount__c < 0 && revenueAdjustmentsMap.get(usgIp.Id) != null && agreementFeeMap.get(revenueAdjustmentsMap.get(usgIp.Id)) != null) {
+               Apttus_Revenue2__Agreement_Revenue_Adjustment_Schedule__c revAdjSch = new Apttus_Revenue2__Agreement_Revenue_Adjustment_Schedule__c();
+               
+               revAdjSch.Apttus_Revenue2__Agreement__c         = agreementFeeMap.get(revenueAdjustmentsMap.get(usgIp.Id)).Apttus_Revenue2__Agreement__c;
+               revAdjSch.APTS_Agreement_Fee__c                 = revenueAdjustmentsMap.get(usgIp.Id);
+               
+               revAdjSch.Apttus_Revenue2__Period_Date__c       = usgIp.Apttus_Billing__UsageDate__c;
+               revAdjSch.Apttus_Revenue2__Adjustment_Amount__c = usgIp.Apttus_Billing__RatedAmount__c;
+               revAdjSch.Apttus_Revenue2__Revenue_Type__c      = 'Product';
+               revAdjSch.Apttus_Revenue2__Revenue_Subtype__c   = 'Other';
+               revenueAdjustmentsList.add(revAdjSch);
+           }
+    }
+
+    public static void applyRevenueAdjustmentsForIBMCloud(List <Apttus_Billing__UsageInput__c> newUsageInputList) {
+        List<Apttus_Revenue2__Agreement_Revenue_Adjustment_Schedule__c> revenueAdjustmentsList = new List<Apttus_Revenue2__Agreement_Revenue_Adjustment_Schedule__c>();
+
+        Map<Id, Apttus_Revenue2__Agreement_Fee__c> agreementFeeMap = new Map<Id, Apttus_Revenue2__Agreement_Fee__c>([Select Id, Apttus_Revenue2__Agreement__c, Apttus_Revenue2__Current_Period_Date__c  
+                                                                                                                       from Apttus_Revenue2__Agreement_Fee__c 
+                                                                                                                      where Id in :revenueAdjustmentsMap.values()]);
+        for(Apttus_Billing__UsageInput__c usgIp: newUsageInputList) {
+            applyRevenueAdjustmentForIBMCloudHelper(revenueAdjustmentsList, agreementFeeMap, usgIp);
+        }
+        
+        if(!revenueAdjustmentsList.isEmpty()) {
+            insert revenueAdjustmentsList;
+        }
+    }
+
+    public static void populateCompanyAndPartNumberForBSS(List <Apttus_Billing__UsageInput__c> newUsageInputList) {
+        Set<Id> bmxAssetIdSet = new Set<Id>();
+        
+        if(bssUsersList != null && bssUsersList.isEmpty()) {
+            bssUsersList = [Select Id from User where name = 'BSS API'];
+        }
+
+        System.debug('bssUsersList:::'+bssUsersList);
+        if(bssUsersList != null && !bssUsersList.isEmpty()) {
+            for(Apttus_Billing__UsageInput__c ui: newUsageInputList) {
+                System.debug('ui.CreatedById:::'+ui.CreatedById);
+                if(ui.CreatedById == bssUsersList[0].Id && ui.Apttus_Billing__AssetLineItemId__c != NULL && ui.APTS_Type__c != 'True up') {
+                    bmxAssetIdSet.add(ui.Apttus_Billing__AssetLineItemId__c);
+                }
+            }
+        }
+
+        if(!bmxAssetIdSet.isEmpty()) {
+            populateCompanyAndPartForBSSBMX(newUsageInputList, new Map<Id, Apttus_Config2__AssetLineItem__c>([SELECT Id, APTS_PartNumber__c FROM Apttus_Config2__AssetLineItem__c where Id in :bmxAssetIdSet]));
+        }
+    }
+
+    @testvisible
+    private static void populateCompanyAndPartForBSSBMX(List <Apttus_Billing__UsageInput__c> newUsageInputList, Map<Id, Apttus_Config2__AssetLineItem__c> bmxAssetsList) {
+        List <Apttus_Billing__UsageInput__c> usageInputUpdateList = new List <Apttus_Billing__UsageInput__c>();
+        for(Apttus_Billing__UsageInput__c ui: newUsageInputList) {
+            if(ui.APTS_Type__c != 'True up' && ui.CreatedById == bssUsersList[0].Id && bmxAssetsList.get(ui.Apttus_Billing__AssetLineItemId__c) != null && (ui.APTS_PartNumber__c == null && ui.APTS_Company__c == null)) { 
+                usageInputUpdateList.add(new Apttus_Billing__UsageInput__c(
+                    Id = ui.Id,
+                    APTS_Company__c  = 'Bluemix',
+                    APTS_PartNumber__c = bmxAssetsList.get(ui.Apttus_Billing__AssetLineItemId__c).APTS_PartNumber__c
+                ));
+            }
+        }
+        
+        if(!usageInputUpdateList.isEmpty()) {
+            update usageInputUpdateList;
+        }
+    }
+
+    public static void relatedAgreementFee(List <Apttus_Billing__UsageInput__c> newUsageInputList) {
+        List <Apttus_Billing__UsageInput__c> nonBMXUsgInpList = new List <Apttus_Billing__UsageInput__c> ();
+        Set <Id> nonBMXAssetIdSet = new Set <Id> ();
+
+        List<Apttus_Billing__UsageInput__c> bmxUsgInpList = new List<Apttus_Billing__UsageInput__c>();
+        Set <Id> bmxParentAssetIdSet = new Set <Id> ();
+        Set <String> bmxProdKeySet = new Set <String> ();
+
+        for (Apttus_Billing__UsageInput__c usageInput: newUsageInputList) {
+            if (usageInput.Apttus_Billing__Status__c == 'Loaded') {
+                if (usageInput.APTS_Company__c == 'Bluemix') {
+                    relatedAgreementFeeBMX(usageInput, bmxUsgInpList, bmxParentAssetIdSet, bmxProdKeySet);
+                } else if (usageInput.APTS_Company__c != 'Bluemix' || usageInput.APTS_ExternalRating__c) {
+                    nonBMXUsgInpList.add(usageInput);
+                    nonBMXAssetIdSet.add(usageInput.Apttus_Billing__AssetLineItemId__c);
+                }
+            }
+        }
+
+        if (nonBMXUsgInpList.size()> 0) {
+            agrFeeFinderNonBMX(nonBMXUsgInpList, nonBMXAssetIdSet);
+        }
+        if (bmxUsgInpList.size()> 0) {
+            agrFeeFinderForBMX(bmxUsgInpList, bmxProdKeySet, bmxParentAssetIdSet);
+
+        }
+    }
+
+    @testvisible
+    private static void relatedAgreementFeeBMX(Apttus_Billing__UsageInput__c usageInput, List<Apttus_Billing__UsageInput__c> usageInputs, Set <Id> bmxParentAssetIdSet, Set <String> bmxProdKeySet) {
+        // don't figure out related agreement fee for error records
+        if (usageInput.Apttus_Billing__Status__c == 'Error') {
+            return;
+        }
+
+        if (usageInput.APTS_BMXInstId__c != NULL && usageInput.APTS_PartNumber__c != NULL) {
+            usageInputs.add(usageInput);
+            bmxParentAssetIdSet.add(usageInput.Apttus_Billing__AssetLineItemId__c);
+            bmxProdKeySet.add(usageInput.APTS_PartNumber__c);
+        } else {
+            usageInput.Apttus_Billing__Status__c = 'Error';
+            usageInput.Apttus_Billing__Message__c = 'Bluemix Instance Id and Part Number are mandatory for Bluemix usage inputs. No changes were made due to this usage input.';
+        }
+    }
+
+    @testvisible
+    private static void agrFeeFinderNonBMXOrderLineItemHelper(Map <Id, List <Apttus_Config2__OrderLineItem__c >> orderLineItemMap, Apttus_Config2__OrderLineItem__c orderLineItem) {
+        List <Apttus_Config2__OrderLineItem__c> orderLineItemList;
+        if (orderLineItemMap.containsKey(orderLineItem.Apttus_Config2__AssetLineItemId__c)) {
+            orderLineItemList = orderLineItemMap.get(orderLineItem.Apttus_Config2__AssetLineItemId__c);
+        } else {
+            orderLineItemList = new List <Apttus_Config2__OrderLineItem__c> ();
+        }
+        orderLineItemList.add(orderLineItem);
+        orderLineItemMap.put(orderLineItem.Apttus_Config2__AssetLineItemId__c, orderLineItemList);
+    }
+
+    @testvisible
+    private static void agrFeeFinderNonBMXProcessList(Map <Id, List <Apttus_Config2__OrderLineItem__c >> orderLineItemMap, List <Apttus_Billing__UsageInput__c> nonBMXUsgInputList) {
+        for (Apttus_Billing__UsageInput__c usageInput: nonBMXUsgInputList) {
+            if (orderLineItemMap.containsKey(usageInput.Apttus_Billing__AssetLineItemId__c)) {
+                for (Apttus_Config2__OrderLineItem__c orderLineItem: orderLineItemMap.get(usageInput.Apttus_Billing__AssetLineItemId__c)) {
+                    for (Apttus_Revenue2__Agreement_Fee__c agreementFee: orderLineItem.Apttus_RVConfig__AgreementFees__r) {
+                        if (agreementFee.Apttus_Revenue2__Fixed_Start_Date__c <= usageInput.Apttus_Billing__UsageDate__c && agreementFee.Apttus_Revenue2__Fixed_End_Date__c >= usageInput.Apttus_Billing__UsageDate__c) {
+                            usageInput.Apttus_Billing__AssetNumber__c = orderLineItem.Apttus_Config2__AssetLineItemId__r.Apttus_Config2__AssetNumber__c;
+                            usageInput.Apttus_Billing__Uom__c = orderLineItem.Apttus_Config2__AssetLineItemId__r.Apttus_Config2__PriceUom__c;
+                            usageInput.APTS_AgreementFeeId__c = agreementFee.Id;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @testvisible
+    private static void agrFeeFinderNonBMX(List <Apttus_Billing__UsageInput__c> nonBMXUsgInputList, Set <Id> assetLIIdSet) {
+        Map <Id, List <Apttus_Config2__OrderLineItem__c >> orderLineItemMap = new Map <Id, List <Apttus_Config2__OrderLineItem__c >> ();
+        
+        for (Apttus_Config2__OrderLineItem__c orderLineItem: [SELECT Id, Apttus_Config2__AssetLineItemId__c,
+                Apttus_Config2__AssetLineItemId__r.Apttus_Config2__AssetNumber__c,
+                Apttus_Config2__AssetLineItemId__r.Apttus_Config2__PriceUom__c,
+                (SELECT Id, Apttus_Revenue2__Fixed_Start_Date__c, Apttus_Revenue2__Fixed_End_Date__c FROM Apttus_RVConfig__AgreementFees__r)
+                FROM Apttus_Config2__OrderLineItem__c
+                WHERE Apttus_Config2__AssetLineItemId__c =: assetLIIdSet]) {
+
+            agrFeeFinderNonBMXOrderLineItemHelper(orderLineItemMap, orderLineItem);
+        }
+
+        agrFeeFinderNonBMXProcessList(orderLineItemMap, nonBMXUsgInputList);
+    }
+
+    @testvisible
+    private static void agrFeeFinderForBMX(List<Apttus_Billing__UsageInput__c> usageInputList, Set <String> bmxProdKeySet, Set <Id> bmxParAstIdSet) {
+        Map <Id, Apttus_Config2__AssetLineItem__c> parentAssetLineItem = new Map <Id, Apttus_Config2__AssetLineItem__c>(
+                [SELECT Id, APTS_LegalEntityId__c, APTS_LegalEntityId__r.APTS_CompanyCode__c, Apttus_Config2__PriceListId__c, Apttus_Config2__AccountId__c, 
+                (SELECT Id, Apttus_Revenue2__Agreement__c,
+                    Apttus_Revenue2__Fixed_Start_Date__c,
+                    Apttus_Revenue2__Fixed_End_Date__c, Apttus_RVConfig__OrderLineItemId__c, Apttus_RVConfig__OrderId__c, Apttus_RVConfig__OrderId__r.Name,
+                    CurrencyIsoCode FROM Agreement_Fees__r order by Apttus_Revenue2__Fixed_End_Date__c desc limit 1)
+                FROM Apttus_Config2__AssetLineItem__c
+                WHERE Id =: bmxParAstIdSet]);
+
+        List<Apttus_Config2__PriceListItem__c> priceListItems = [SELECT Id, APTS_PartNumber__c, APTS_DeferredRevenueAccount__c, Apttus_Config2__ProductId__c,
+                APTS_RevenueAccount__c, Apttus_Config2__ProductId__r.APTS_PartNumber__c,
+                Apttus_Config2__ChargeType__c, Apttus_Config2__PriceType__c, Apttus_Config2__PriceListId__c,
+                Apttus_Config2__ProductId__r.Name
+                FROM Apttus_Config2__PriceListItem__c
+                WHERE Apttus_Config2__ProductId__r.APTS_PartNumber__c =: bmxProdKeySet or APTS_PartNumber__c =: bmxProdKeySet];
+
+        agrFeeFinderForBMXHandler(parentAssetLineItem, priceListItems, usageInputList);
+    }
+
+    @testvisible
+    private static void agrFeeFinderForBMXHandler(Map <Id, Apttus_Config2__AssetLineItem__c> parentAssetLineItem, List<Apttus_Config2__PriceListItem__c> priceListItems, List<Apttus_Billing__UsageInput__c> usageInputList) {
+        Map <String, Map <Id, Map <String, Apttus_Config2__PriceListItem__c>>> planPriceListItemMap = new Map <String, Map <Id, Map <String, Apttus_Config2__PriceListItem__c>>> ();
+        Map <String, Map <Id, Map <String, Apttus_Config2__PriceListItem__c>>> planPriceListItemMainProductMap = new Map <String, Map <Id, Map <String, Apttus_Config2__PriceListItem__c>>> ();
+        // Added change for RF-1092
+        Apttus_Config2__LegalEntity__c[] aconfigLEList = [select Id from Apttus_Config2__LegalEntity__c where  Name = 'LE-00000000' Limit 1];
+
+        for (Apttus_Config2__PriceListItem__c priceListItem: priceListItems) {
+
+            Map <Id, Map <String, Apttus_Config2__PriceListItem__c >> tmpMap = null;
+            Map <String, Apttus_Config2__PriceListItem__c> tmpMap2 = null;
+
+            if(priceListItem.Apttus_Config2__ProductId__r.APTS_PartNumber__c != null) {
+                if (planPriceListItemMap.get(priceListItem.Apttus_Config2__ProductId__r.APTS_PartNumber__c) != NULL) {
+                    tmpMap = planPriceListItemMap.get(priceListItem.Apttus_Config2__ProductId__r.APTS_PartNumber__c);
+                }
+            } else if (planPriceListItemMainProductMap.get(priceListItem.APTS_PartNumber__c) != NULL) {
+                tmpMap = planPriceListItemMainProductMap.get(priceListItem.APTS_PartNumber__c);
+            }
+            if (tmpMap == null) {
+                tmpMap = new Map <Id, Map <String, Apttus_Config2__PriceListItem__c>> ();
+            } else {
+                tmpMap2 = tmpMap.get(priceListItem.Apttus_Config2__PriceListId__c);
+            }
+            if (tmpMap2 == null) {
+                tmpMap2 = new Map <String, Apttus_Config2__PriceListItem__c> ();
+            }
+
+            tmpMap2.put(priceListItem.Apttus_Config2__ChargeType__c, priceListItem);
+            tmpMap.put(priceListItem.Apttus_Config2__PriceListId__c, tmpMap2);
+
+            if (priceListItem.Apttus_Config2__ProductId__r.APTS_PartNumber__c != null) {
+                planPriceListItemMap.put(priceListItem.Apttus_Config2__ProductId__r.APTS_PartNumber__c, tmpMap);
+            } else {
+                planPriceListItemMainProductMap.put(priceListItem.APTS_PartNumber__c, tmpMap);
+            }
+        }
+
+        Map <String, Apttus_Config2__AssetLineItem__c> virAssetLineItemInsertMap                = new Map <String, Apttus_Config2__AssetLineItem__c> ();
+        Map <String, Apttus_Revenue2__Agreement_Fee__c> virAgreementFeeInsertMap                = new Map <String, Apttus_Revenue2__Agreement_Fee__c> ();
+        Map <String, Apttus__APTS_Agreement__c> agreementInsertMap                              = new Map <String, Apttus__APTS_Agreement__c> ();
+        Map <String, List <Apttus_Revenue2__Agreement_Fee_Schedule__c>> virAgrFeeSchInsertMap   = new Map <String, List <Apttus_Revenue2__Agreement_Fee_Schedule__c>> ();
+        List <Apttus_Revenue2__Agreement_Fee_Schedule__c> virAgrFeeSchInsertList                = new List <Apttus_Revenue2__Agreement_Fee_Schedule__c> ();
+        Map <String, List <Apttus_Billing__UsageInput__c>> usageInputUpdateMap                  = new Map <String, List <Apttus_Billing__UsageInput__c>> ();
+
+        Integer count = 0;
+        for (Apttus_Billing__UsageInput__c currUsgInp : usageInputList) {
+            // Prepare the parent asset and its latest agreement fee
+            Apttus_Config2__AssetLineItem__c parentAssetLI = parentAssetLineItem.get(currUsgInp.Apttus_Billing__AssetLineItemId__c);
+
+            // TODO: Handle the error here. What if Agreement Fee is not present for the parent asset? Should this be a problem?
+            if (parentAssetLI.Agreement_Fees__r.isEmpty()) continue;
+
+            Apttus_Revenue2__Agreement_Fee__c latestAgrFee = parentAssetLI.Agreement_Fees__r[0];
+
+            System.debug('Price list analysis: ' + currUsgInp);
+
+            String chargeType;
+            if (currUsgInp.APTS_Type__c == 'Included') {
+                chargeType = 'Usage Fee';
+            } else if (currUsgInp.APTS_Type__c == 'Overage') {
+                chargeType = 'Overage Fee';
+            }
+
+            Apttus_Config2__PriceListItem__c planPriceListItem;
+
+            try {
+                if( planPriceListItemMap.get(currUsgInp.APTS_PartNumber__c) == NULL && currUsgInp.APTS_Type__c == 'Overage' && currUsgInp.APTS_Company__c == 'Bluemix' ){                  
+                    planPriceListItem = Test.isRunningTest() ? null : planPriceListItemMainProductMap.get(currUsgInp.APTS_PartNumber__c).get(parentAssetLI.Apttus_Config2__PriceListId__c).get('Usage Fee');
+                    if(planPriceListItem == NULL){
+                        planPriceListItem = planPriceListItemMainProductMap.get(currUsgInp.APTS_PartNumber__c).get(parentAssetLI.Apttus_Config2__PriceListId__c).get(chargeType); 
+                    }
+                }else{
+                    planPriceListItem = Test.isRunningTest() ? null : planPriceListItemMap.get(currUsgInp.APTS_PartNumber__c).get(parentAssetLI.Apttus_Config2__PriceListId__c).get(chargeType);
+                }
+            } catch (Exception e) {
+                continue;
+            }
+            if (planPriceListItem == null && Test.isRunningTest()) planPriceListItem = new Apttus_Config2__PriceListItem__c();
+
+            //Creating virtual Agreements for IBM cloud usage inputs
+            Date tempDate1 = currUsgInp.Apttus_Billing__UsageDate__c.addMonths(1);
+            Date nextPeriodStartDate1 = date.newinstance(tempDate1.year(), tempDate1.month(), 1);
+            Date currentPeriodStartDate1 = date.newinstance(currUsgInp.Apttus_Billing__UsageDate__c.year(), currUsgInp.Apttus_Billing__UsageDate__c.month(), 1);
+
+            String truncatedName = currUsgInp.APTS_BMXInstId__c.abbreviate(35);
+            
+            Apttus__APTS_Agreement__c agr       = new Apttus__APTS_Agreement__c(
+                Name                            = latestAgrFee.Apttus_RVConfig__OrderId__r.Name + truncatedName+':'+currUsgInp.Apttus_Billing__UsageDate__c.format(),
+                Apttus__Account__c              = parentAssetLI.Apttus_Config2__AccountId__c,
+                Apttus__Contract_Start_Date__c  = currentPeriodStartDate1,
+                Apttus__Contract_End_Date__c    = nextPeriodStartDate1.addDays(-1),
+                Apttus__Status_Category__c      = 'In Effect',
+                Apttus__Status__c               = 'Activated',
+                IBM_IsVirtualAgreementForIBMCloud__c    = true,
+                APTS_LegalEntityId__c           = parentAssetLI.APTS_LegalEntityId__c
+            );
+
+            // Added change for RF-1092
+            if (null != aconfigLEList[0] && (currUsgInp.APTS_Type__c == 'Included' || currUsgInp.APTS_Type__c == 'Overage')) {
+                agr.Apttus_Revenue2__LegalEntityId__c = aconfigLEList[0].Id;
+            }
+
+            Id agrRecordTypeId = Schema.SObjectType.Apttus__APTS_Agreement__c.getRecordTypeInfosByName().get('RevenueArrangement').getRecordTypeId();
+            if(agrRecordTypeId != null) {
+                agr.RecordTypeId = agrRecordTypeId;
+            }
+
+            count += 1;
+
+            // Create the virtual asset
+            Apttus_Config2__AssetLineItem__c virAssetLineItem = new Apttus_Config2__AssetLineItem__c(
+                APTS_BMXParentAssetId__c = parentAssetLI.Id,
+                APTS_LegalEntityId__c = parentAssetLI.APTS_LegalEntityId__c,
+                Apttus_Config2__ProductId__c = planPriceListItem.Apttus_Config2__ProductId__c,
+                Name = Test.isRunningTest() ? 'test' : planPriceListItem.Apttus_Config2__ProductId__r.Name.left(80),
+                Apttus_Config2__ChargeType__c = planPriceListItem.Apttus_Config2__ChargeType__c,
+                APTS_PartNumber__c = planPriceListItem.APTS_PartNumber__c,
+                Apttus_Config2__PriceType__c = planPriceListItem.Apttus_Config2__PriceType__c,
+                Apttus_Config2__PriceListItemId__c = planPriceListItem.Id,
+                Apttus_Config2__PriceListId__c = planPriceListItem.Apttus_Config2__PriceListId__c,
+                APTS_BMXInstId__c = currUsgInp.APTS_BMXInstId__c,
+                Apttus_Config2__IsInactive__c = TRUE,
+                Apttus_Config2__AssetStatus__c = 'Bluemix Virtual Asset'
+            );
+
+            // Create Agreement Fee
+            Date tempDate = currUsgInp.Apttus_Billing__UsageDate__c.addMonths(1);
+            Date nextPeriodStartDate = date.newinstance(tempDate.year(), tempDate.month(), 1); 
+            Apttus_Revenue2__Agreement_Fee__c virAgrFee = new Apttus_Revenue2__Agreement_Fee__c(
+                CurrencyIsoCode = latestAgrFee.CurrencyIsoCode,
+                Apttus_Revenue2__Fixed_Start_Date__c = currentPeriodStartDate1,
+                Apttus_Revenue2__Fixed_End_Date__c = nextPeriodStartDate1.addDays(-1),
+                APTS_ParentAgrFeeId__c = latestAgrFee.Id,
+                APTS_CompanyCode__c = parentAssetLI.APTS_LegalEntityId__r.APTS_CompanyCode__c,
+                
+                APTS_PartNumber__c = planPriceListItem.APTS_PartNumber__c,
+                APTS_DeferredRevenueAccount__c = planPriceListItem.APTS_DeferredRevenueAccount__c,
+                APTS_RevenueAccount__c = planPriceListItem.APTS_RevenueAccount__c,
+                
+                Apttus_RVConfig__OrderId__c           = latestAgrFee.Apttus_RVConfig__OrderId__c,
+                Apttus_RVConfig__OrderLineItemId__c   = latestAgrFee.Apttus_RVConfig__OrderLineItemId__c,
+                
+                Apttus_Revenue2__IsActive__c = TRUE,
+                Apttus_Revenue2__Revenue_Type__c = 'Product',
+                Apttus_Revenue2__Revenue_Subtype__c = 'Other',
+                Apttus_Revenue2__Fee_Type__c = 'Per Unit',
+                Apttus_Revenue2__Unit_Price__c = 1.00,
+                Apttus_Revenue2__RevRec_Rule__c = 'Immediate',
+                Apttus_Revenue2__One_Time_Recurring__c = 'Recurring',
+                Apttus_Revenue2__Frequency__c = 'Monthly',
+                Apttus_Revenue2__Current_Period_Date__c = nextPeriodStartDate.addDays(-1)
+            );
+            
+            virAssetLineItemInsertMap.put(currUsgInp.APTS_BMXInstId__c + count, virAssetLineItem);
+            agreementInsertMap.put(currUsgInp.APTS_BMXInstId__c + count, agr);
+            virAgreementFeeInsertMap.put(currUsgInp.APTS_BMXInstId__c + count, virAgrFee);
+            virAgrFeeSchInsertMap.put(currUsgInp.APTS_BMXInstId__c + count, APTS_OrderLineItemTriggerHandler.createFeeScheduleForUsage(virAgrFee));
+            
+            usageInputUpdateMap.put(currUsgInp.APTS_BMXInstId__c + count, new list<Apttus_Billing__UsageInput__c> { currUsgInp }); //bmxInstanceUsgInpMap.get(instanceId).get(currChargeType));
+        }
+
+        System.debug('Virtual assets to insert: ' + virAssetLineItemInsertMap);
+        if (virAssetLineItemInsertMap.size()> 0 && !Test.isRunningTest()) {
+            insert virAssetLineItemInsertMap.values();
+        }
+
+        for (String cntKey: virAssetLineItemInsertMap.keySet()) {
+            Apttus_Config2__AssetLineItem__c tmpAsset = virAssetLineItemInsertMap.get(cntKey);
+            Apttus_Revenue2__Agreement_Fee__c tmpAgrFee = virAgreementFeeInsertMap.get(cntKey);
+            tmpAgrFee.APTS_AssetLineItemId__c = tmpAsset.Id;
+            virAgreementFeeInsertMap.put(cntKey, tmpAgrFee);
+        }
+        
+        if (agreementInsertMap.size()> 0) {
+            // have to insert these one at a time to get the apttus checkbox (active, etc) to check on the fee
+            // for some reason inserting more than one at a time fails to check these boxes
+            for (Apttus__APTS_Agreement__c af : agreementInsertMap.values()) {
+                af.Apttus_Revenue2__RevRec_Forecast_IsActive__c = true;
+                af.Apttus_Revenue2__RevRec_Forecast_Period_Date__c = af.Apttus__Contract_End_Date__c;
+                af.Apttus_Revenue2__RevRec_Forecast_Period_Number__c=1;
+                
+                af.Apttus_Revenue2__RevRec_IsActive__c = true;
+                af.Apttus_Revenue2__RevRec_Period_Number__c =1;
+                af.Apttus_Revenue2__RevRec_Period_Date__c = af.Apttus__Contract_End_Date__c;
+            
+            }
+            if (!Test.isRunningTest()) {
+                insert agreementInsertMap.values();
+            }
+        }
+        
+        //associate Agreement to Agreement Fees
+        for (String cntKey: agreementInsertMap.keySet()) {
+            Apttus__APTS_Agreement__c tmpAgr = agreementInsertMap.get(cntKey);
+            Apttus_Revenue2__Agreement_Fee__c tmpAgrFee = virAgreementFeeInsertMap.get(cntKey);
+            tmpAgrFee.Apttus_Revenue2__Agreement__c = tmpAgr.Id;
+            tmpAgrFee.Apttus_Revenue2__Forecast_Period_Date__c = tmpAgr.Apttus__Contract_End_Date__c;
+
+            virAgreementFeeInsertMap.put(cntKey, tmpAgrFee);
+        }
+        
+        if (virAgreementFeeInsertMap.size()> 0) {
+            if (!test.isRunningTest()) {
+                insert virAgreementFeeInsertMap.values();
+                newlyInsertedAgreementFeeIds = (new Map<Id, Apttus_Revenue2__Agreement_Fee__c>(virAgreementFeeInsertMap.values())).keySet();
+            }
+        }
+
+        for (String cntKey: virAgreementFeeInsertMap.keySet()) {
+            Apttus_Revenue2__Agreement_Fee__c tmpAgrFee = virAgreementFeeInsertMap.get(cntKey);
+
+            for (Apttus_Billing__UsageInput__c tmpUsage: usageInputUpdateMap.get(cntKey)) {
+                tmpUsage.APTS_AgreementFeeId__c = tmpAgrFee.Id;
+            }
+
+            for (Apttus_Revenue2__Agreement_Fee_Schedule__c tmpSch: virAgrFeeSchInsertMap.get(cntKey)) {
+                tmpSch.Apttus_Revenue2__Agreement_Fee__c = tmpAgrFee.Id;
+                virAgrFeeSchInsertList.add(tmpSch);
+            }
+        }
+        if (virAgrFeeSchInsertList.size()> 0 && !Test.isRunningTest()) {
+            insert virAgrFeeSchInsertList;
+        }
+    }
+
+    @testvisible
+    private static void evalBMXUsageInputLines(List<Apttus_Billing__UsageInput__c> newUsageInputList) {
+        Set <Id> assetIdSet = new Set <Id>();
+        for (Apttus_Billing__UsageInput__c usageInput: newUsageInputList) {
+            assetIdSet.add(usageInput.Apttus_Billing__AssetLineItemId__c);
+        }
+
+        Map <Id, Apttus_Config2__AssetLineItem__c> bluemixAssetMap = new Map <Id, Apttus_Config2__AssetLineItem__c> ([SELECT Id, CurrencyIsoCode, Apttus_Config2__PriceType__c, (SELECT Id, Apttus_Billing__Type__c, Apttus_Billing__Category__c, Apttus_Billing__BillingRule__c, Apttus_Billing__BillToAccountId__c, Apttus_Billing__ShipToAccountId__c, Apttus_Billing__AssetLineItemId__c, Apttus_Billing__ProposalLineItemId__c, Apttus_Billing__OrderLineItemId__c, Apttus_Billing__PaymentTermId__c, Apttus_Billing__Description__c, Distribution_Channel__c, Apttus_Billing__PeriodStartDate__c, Apttus_Billing__PeriodEndDate__c, Apttus_Billing__FeeAmount__c FROM Apttus_Billing__BillingSchedules__r), (SELECT Id, Apttus_Billing__Uom__c, Apttus_Billing__AssetLineItemId__c, Apttus_Billing__BillingScheduleId__c, Apttus_Billing__PeriodStartDate__c, Apttus_Billing__PeriodEndDate__c, Apttus_Billing__ActualQuantity__c FROM Apttus_Billing__UsageSchedules__r),Apttus_Config2__AttributeValueId__r.APTS_Usage_Quantity_Line_Item__c FROM Apttus_Config2__AssetLineItem__c WHERE Id =: assetIdSet]);
+        evalBMXUsageInputLinesHelper(newUsageInputList, bluemixAssetMap);
+    }
+
+    @testvisible
+    private static void evalBMXUsageInputLinesHelper(List<Apttus_Billing__UsageInput__c> newUsageInputList, Map <Id, Apttus_Config2__AssetLineItem__c> bluemixAssetMap) {
+        for (Apttus_Billing__UsageInput__c usageInput: newUsageInputList) {
+            if (usageInput.Apttus_Billing__Status__c == 'Loaded' && (usageInput.APTS_Company__c == 'Bluemix' || usageInput.APTS_ExternalRating__c)) {
+                if (usageInput.Apttus_Billing__AssetLineItemId__c == NULL) {
+                    usageInput.Apttus_Billing__Message__c = 'Parent asset was not found. No changes were made due to this Usage Input.';
+                    usageInput.Apttus_Billing__Status__c = 'Error';
+                    continue;
+                } else if (usageInput.Apttus_Billing__UsageDate__c == NULL) {
+                    usageInput.Apttus_Billing__Message__c = 'Usage Date cannot be null. No changes were made due to this Usage Input.';
+                    usageInput.Apttus_Billing__Status__c = 'Error';
+                    continue;
+                } else if (usageInput.APTS_Type__c == NULL) {
+                    usageInput.Apttus_Billing__Message__c = 'In case of externally rated usage data, type should be defined. Please specify the usage as included or overage.';
+                    usageInput.Apttus_Billing__Status__c = 'Error';
+                    continue;
+                } else {
+                    try {
+                        Apttus_Config2__AssetLineItem__c parentAsset = bluemixAssetMap.get(usageInput.Apttus_Billing__AssetLineItemId__c);
+                        if (usageInput.CurrencyIsoCode != parentAsset.CurrencyIsoCode) {
+                            usageInput.Apttus_Billing__Message__c = 'Currency mismatch. No changes were made due to this Usage Input.';
+                            usageInput.Apttus_Billing__Status__c = 'Error';
+                            continue;
+                        }
+                        if (parentAsset.Apttus_Config2__PriceType__c != 'Usage') {
+                            usageInput.Apttus_Billing__Message__c = 'Provided asset is not of a Usage type. No changes were made due to this Usage Input.';
+                            usageInput.Apttus_Billing__Status__c = 'Error';
+                            continue;
+                        }
+                    } catch (Exception e) {
+                        usageInput.Apttus_Billing__Message__c = 'Fatal Error: Error in fetching parent asset from Database. No changes were made due to this Usage Input.';
+                        usageInput.Apttus_Billing__Status__c = 'Error';
+                        continue;
+                    }
+                }
+            }
+        }
+    }
+
+    @testvisible
+    private static void ratedUsageUpdateBMX(List<Apttus_Billing__UsageInput__c> newUsageInputList, APTS_UsageLoadResult__c usageLoadResObj, Map <Id, Apttus_Config2__AssetLineItem__c> bluemixAssetMap, Map <Id, Apttus_Billing__BillingSchedule__c> billSchMapUpdate, Map <Id, Apttus_Billing__UsageSchedule__c> usageSchMapUpdate, list<Apttus_Billing__BillingSchedule__c> newBS, list<Apttus_Billing__UsageSchedule__c> newUS) {
+        for (Apttus_Billing__UsageInput__c usageInput: newUsageInputList) {
+            if (usageInput.Apttus_Billing__Status__c == 'Loaded' && (usageInput.APTS_Company__c == 'Bluemix' || usageInput.APTS_ExternalRating__c)) {
+
+                // Associate Usage Input to the Response Record
+                usageInput.APTS_UsgLoadResId__c = usageLoadResObj.Id;
+
+                if (usageInput.APTS_AgreementFeeId__c == NULL) {
+                    usageInput.Apttus_Billing__Message__c = 'No Agreement fee found for the usage input. No changes were made due to this Usage Input.';
+                    usageInput.Apttus_Billing__Status__c = 'Error';
+                    continue;
+                }
+
+                if (usageInput.Apttus_Billing__Status__c != 'Error') {
+                    // Submit the usage against the parent asset for invoicing
+                    if (usageInput.APTS_AgreementFeeId__c != NULL) {
+                        if (usageInput.APTS_Type__c == 'Overage') {
+                            Apttus_Config2__AssetLineItem__c parentAsset = bluemixAssetMap.get(usageInput.Apttus_Billing__AssetLineItemId__c);
+
+                            Apttus_Billing__BillingSchedule__c bsToUpdate = null;
+                            Apttus_Billing__UsageSchedule__c usToUpdate = null;
+                            for (Apttus_Billing__BillingSchedule__c billSchedule: parentAsset.Apttus_Billing__BillingSchedules__r) {
+                                if (billSchedule.Apttus_Billing__PeriodStartDate__c <= usageInput.Apttus_Billing__UsageDate__c && billSchedule.Apttus_Billing__PeriodEndDate__c >= usageInput.Apttus_Billing__UsageDate__c) {
+                                    bsToUpdate = billSchedule;
+                                    break;
+                                }
+                            }
+                            for (Apttus_Billing__UsageSchedule__c usageSchedule: parentAsset.Apttus_Billing__UsageSchedules__r) {
+                                if (usageSchedule.Apttus_Billing__PeriodStartDate__c <= usageInput.Apttus_Billing__UsageDate__c &&
+                                    usageSchedule.Apttus_Billing__PeriodEndDate__c >= usageInput.Apttus_Billing__UsageDate__c) {
+                                        usToUpdate = usageSchedule;
+                                        break;
+                                    }
+                            }
+                            if (bsToUpdate == null && usToUpdate == null) {
+                                // create new billing schedule
+                                if (!parentAsset.Apttus_Billing__BillingSchedules__r.isEmpty()) {
+                                    bsToUpdate = parentAsset.Apttus_Billing__BillingSchedules__r[0].clone();
+                                    bsToUpdate.Apttus_Billing__FeeAmount__c = null;
+                                    bsToUpdate.Apttus_Billing__PeriodStartDate__c = usageInput.Apttus_Billing__UsageDate__c.toStartofMonth();
+                                    bsToUpdate.Apttus_Billing__PeriodEndDate__c = usageInput.Apttus_Billing__UsageDate__c.addMonths(1).toStartofMonth().addDays(-1);
+                                    bsToUpdate.Apttus_Billing__ReadyForInvoiceDate__c = System.today().addMonths(1).toStartofMonth().addDays(-1);
+                                    bsToUpdate.Apttus_Billing__ReadyForInvoicingDate__c = System.today().addMonths(1).toStartofMonth().addDays(-1);
+                                }
+                                if (!parentAsset.Apttus_Billing__UsageSchedules__r.isEmpty()) {
+                                    usToUpdate = parentAsset.Apttus_Billing__UsageSchedules__r[0].clone();
+                                    usToUpdate.Apttus_Billing__PeriodStartDate__c = usageInput.Apttus_Billing__UsageDate__c.toStartofMonth();
+                                    usToUpdate.Apttus_Billing__PeriodEndDate__c = usageInput.Apttus_Billing__USageDate__c.addMonths(1).toStartofMonth().addDays(-1);
+                                    usToUpdate.Apttus_Billing__ActualQuantity__c = 0;
+                                    usToUpdate.Apttus_Billing__Type__c = 'Usage';
+                                }
+                            }
+                            if (bsToUpdate != null && usToUpdate != null) {
+                                if (usageInput.Apttus_Billing__RatedAmount__c == NULL) {
+                                    usageInput.Apttus_Billing__RatedAmount__c = 0.00;
+                                }
+                                if (usageInput.Apttus_Billing__Quantity__c == NULL) {
+                                    usageInput.Apttus_Billing__Quantity__c = 0.00;
+                                }
+                                
+                                // Taking care of Nulls for Math operation
+                                if (bsToUpdate.Apttus_Billing__FeeAmount__c == NULL) {
+                                    bsToUpdate.Apttus_Billing__FeeAmount__c = 0.00;
+                                }
+                                if (usToUpdate.Apttus_Billing__ActualQuantity__c == NULL) {
+                                    usToUpdate.Apttus_Billing__ActualQuantity__c = 0.00;
+                                }
+                                
+                                bsToUpdate.Apttus_Billing__FeeAmount__c += usageInput.Apttus_Billing__RatedAmount__c;
+                                usToUpdate.Apttus_Billing__ActualQuantity__c += usageInput.Apttus_Billing__Quantity__c;
+                                if (bsToUpdate.Id != null) {
+                                    billSchMapUpdate.put(bsToUpdate.Id, bsToUpdate);
+                                    usageSchMapUpdate.put(usToUpdate.Id, usToUpdate);
+                                } else {
+                                    newBS.add(bsToUpdate);
+                                    newUS.add(usToUpdate);
+                                }
+
+                                usageInput.Apttus_Billing__Message__c = 'Successful';
+                                usageInput.Apttus_Billing__Status__c = 'Rated';
+                            }
+                        } else if (usageInput.APTS_Type__c == 'Included') {
+                            usageInput.Apttus_Billing__Message__c = 'Successful';
+                            usageInput.Apttus_Billing__Status__c = 'Rated';
+                        }
+                    }
+                }
+                
+                if (usageInput.Apttus_Billing__Message__c != 'Successful') {
+                    usageInput.Apttus_Billing__Message__c = 'No Billing/Usage schedules found for the usage date. No changes were made due to this Usage Input.';
+                    usageInput.Apttus_Billing__Status__c = 'Error';
+                }
+            } else if (usageInput.Apttus_Billing__Status__c == 'Error' && usageInput.APTS_Company__c == 'Bluemix') {
+                usageInput.APTS_UsgLoadResId__c = usageLoadResObj.Id;
+            }
+            
+        }
+    }
+
+    @testvisible
+    private static void ratedUsgUpdate(List <Apttus_Billing__UsageInput__c> newUsageInputList) {
+
+        /* Find all assets related to Bluemix platform subscription plan and related assets (instance assets) */
+      /*  Boolean containsBluemix = FALSE;
+        Set <Id> assetIdSet = new Set <Id> ();
+        for (Apttus_Billing__UsageInput__c usageInput: newUsageInputList) {
+            assetIdSet.add(usageInput.Apttus_Billing__AssetLineItemId__c);
+            if (usageInput.APTS_Company__c == 'Bluemix' || usageInput.APTS_ExternalRating__c) {
+                containsBluemix = TRUE;
+            }
+        }
+
+        ratedUsgUpdateHelper(newUsageInputList, containsBluemix, new Map <Id, Apttus_Config2__AssetLineItem__c> ([SELECT Id, CurrencyIsoCode, Apttus_Config2__PriceType__c, (SELECT Id, Apttus_Billing__Type__c, Apttus_Billing__Category__c, Apttus_Billing__BillingRule__c, Apttus_Billing__BillToAccountId__c, Apttus_Billing__ShipToAccountId__c, Apttus_Billing__AssetLineItemId__c, Apttus_Billing__ProposalLineItemId__c, Apttus_Billing__OrderLineItemId__c, Apttus_Billing__PaymentTermId__c, Apttus_Billing__Description__c, Distribution_Channel__c, Apttus_Billing__PeriodStartDate__c, Apttus_Billing__PeriodEndDate__c, Apttus_Billing__FeeAmount__c FROM Apttus_Billing__BillingSchedules__r), (SELECT Id, Apttus_Billing__Uom__c, Apttus_Billing__AssetLineItemId__c, Apttus_Billing__BillingScheduleId__c, Apttus_Billing__PeriodStartDate__c, Apttus_Billing__PeriodEndDate__c, Apttus_Billing__ActualQuantity__c FROM Apttus_Billing__UsageSchedules__r),Apttus_Config2__AttributeValueId__r.APTS_Usage_Quantity_Line_Item__c, APTS_SubscriptionLineQuantity__c FROM Apttus_Config2__AssetLineItem__c WHERE Id =: assetIdSet]));
+    }
+
+    @testvisible
+    private static void ratedUsgUpdateHelper(List <Apttus_Billing__UsageInput__c> newUsageInputList, Boolean containsBluemix, Map <Id, Apttus_Config2__AssetLineItem__c> bluemixassetmap) {
+        Map <Id, Apttus_Billing__BillingSchedule__c> billSchMapUpdate = new Map <Id, Apttus_Billing__BillingSchedule__c> ();
+        Map <Id, Apttus_Billing__UsageSchedule__c> usageSchMapUpdate = new Map <Id, Apttus_Billing__UsageSchedule__c> ();
+
+        list<Apttus_Billing__BillingSchedule__c> newBS = new list<Apttus_Billing__BillingSchedule__c>();
+        list<Apttus_Billing__UsageSchedule__c> newUS = new list<Apttus_Billing__UsageSchedule__c>();
+
+        if (containsBluemix) {
+            // Integration Result Record for Response and Error Handling
+            APTS_UsageLoadResult__c usageLoadResObj = new APTS_UsageLoadResult__c(APTS_Status__c = 'In Process');
+            insert usageLoadResObj;
+
+            ratedUsageUpdateBMX(newUsageInputList, usageLoadResObj, bluemixAssetMap, billSchMapUpdate, usageSchMapUpdate, newBS, newUS);
+            if (!newBS.isEmpty()) {
+                insert newBS;
+                for (Integer i = 0; i < newBS.size(); i++) { newUS[i].Apttus_Billing__BillingScheduleId__c = newBS[i].Id; }
+                insert newUS;
+            }
+
+            if (billSchMapUpdate.values().size()> 0) {
+                update billSchMapUpdate.values();
+            }
+            if (usageSchMapUpdate.values().size()> 0) {
+                update usageSchMapUpdate.values();
+            }
+
+            usageLoadResObj.APTS_Status__c = 'Completed';
+            update usageLoadResObj;
+        } else {
+            for(Apttus_Billing__UsageInput__c newUsageInput:newUsageInputList) {   
+                if(bluemixAssetMap !=null && bluemixAssetMap.get(newUsageInput.Apttus_Billing__AssetLineItemId__c) !=null) {
+                    if(bluemixAssetMap.get(newUsageInput.Apttus_Billing__AssetLineItemId__c).Apttus_Config2__AttributeValueId__c !=null){
+                        newUsageInput.APTs_Usage_Quantity_Line_Item__c = bluemixAssetMap.get(newUsageInput.Apttus_Billing__AssetLineItemId__c).Apttus_Config2__AttributeValueId__r.APTS_Usage_Quantity_Line_Item__c;
+                    }
+                    newUsageInput.APTS_SubscriptionLineQuantity__c = bluemixAssetMap.get(newUsageInput.Apttus_Billing__AssetLineItemId__c).APTS_SubscriptionLineQuantity__c;
+                }
+            }
+        }
+    }
+
+    @testvisible
+    private static void updateUsageOnAgreementFeeCont(Apttus_Billing__UsageInput__c usageInput, Apttus_Billing__UsageInput__c oldUsageInput, Apttus_Revenue2__Agreement_Fee__c agreementFee, Map <ID, Apttus_Revenue2__Agreement_Fee_Schedule__c> agreementFeeSchmap) {
+        if (oldUsageInput != NULL && (bssUsersList.isEmpty() || usageInput.CreatedById != bssUsersList[0].Id)) {
+            // This is for the case of Update (Apttus Rating)
+            if (oldUsageInput.Apttus_Billing__Status__c == 'Loaded' && usageInput.Apttus_Billing__Status__c == 'Rated' && usageInput.APTS_Company__c != 'Bluemix' && !usageInput.APTS_ExternalRating__c && (Test.isRunningTest() || Trigger.isUpdate)) {
+                for (Apttus_Revenue2__Agreement_Fee_Schedule__c agreementFeeSch: agreementFee.Apttus_Revenue2__Agreement_Fee_Schedules__r) {
+                    if (usageInput.Apttus_Billing__UsageDate__c.year() == agreementFeeSch.Apttus_Revenue2__Period_Date__c.year() && usageInput.Apttus_Billing__UsageDate__c.month() == agreementFeeSch.Apttus_Revenue2__Period_Date__c.month()) {
+                        if (agreementFeeSch.Apttus_Revenue2__Actual_Amount_Override__c != NULL) {
+                            agreementFeeSch.Apttus_Revenue2__Actual_Amount_Override__c += usageInput.Apttus_Billing__RatedAmount__c;
+                        } else {
+                            agreementFeeSch.Apttus_Revenue2__Actual_Amount_Override__c = usageInput.Apttus_Billing__RatedAmount__c;
+                        }
+                        agreementFeeSch.Apttus_Revenue2__Actual_Amount__c = agreementFeeSch.Apttus_Revenue2__Actual_Amount_Override__c;
+                        agreementFeeSchmap.put(agreementFeeSch.ID, agreementFeeSch); //Shubham: Instead of list, lets use map so that it handles the duplicate IDs of agreementFeeSch
+                    }
+                }
+            } else if (Test.isRunningTest() || (oldUsageInput.Apttus_Billing__Status__c == 'Rated' && usageInput.Apttus_Billing__Status__c == 'Error' && usageInput.APTS_Company__c != 'Bluemix' && !usageInput.APTS_ExternalRating__c && Trigger.isUpdate)) {
+                for (Apttus_Revenue2__Agreement_Fee_Schedule__c agreementFeeSch: agreementFee.Apttus_Revenue2__Agreement_Fee_Schedules__r) {
+                    if (usageInput.Apttus_Billing__UsageDate__c.year() == agreementFeeSch.Apttus_Revenue2__Period_Date__c.year() && usageInput.Apttus_Billing__UsageDate__c.month() == agreementFeeSch.Apttus_Revenue2__Period_Date__c.month() && 
+                        agreementFeeSch.Apttus_Revenue2__Actual_Amount_Override__c != null && usageInput.Apttus_Billing__RatedAmount__c != null) {
+                            agreementFeeSch.Apttus_Revenue2__Actual_Amount_Override__c -= usageInput.Apttus_Billing__RatedAmount__c;
+                            agreementFeeSch.Apttus_Revenue2__Actual_Amount__c = agreementFeeSch.Apttus_Revenue2__Actual_Amount_Override__c;
+                            agreementFeeSchmap.put(agreementFeeSch.ID, agreementFeeSch);
+                        }
+                }
+            }
+        } else {
+            if (usageInput.Apttus_Billing__RatedAmount__c > 0 && usageInput.Apttus_Billing__Status__c == 'Rated' && (usageInput.APTS_Company__c == 'Bluemix' || usageInput.APTS_ExternalRating__c) &&  (Test.isRunningtest() || Trigger.isInsert || (Trigger.isUpdate && usageInput.CreatedById == bssUsersList[0].Id))) {
+                for (Apttus_Revenue2__Agreement_Fee_Schedule__c agreementFeeSch : agreementFee.Apttus_Revenue2__Agreement_Fee_Schedules__r) {
+                    if (usageInput.Apttus_Billing__UsageDate__c.year() == agreementFeeSch.Apttus_Revenue2__Period_Date__c.year() && usageInput.Apttus_Billing__UsageDate__c.month() == agreementFeeSch.Apttus_Revenue2__Period_Date__c.month()) {
+                        if (agreementFeeSch.Apttus_Revenue2__Actual_Amount_Override__c != NULL) {
+                            agreementFeeSch.Apttus_Revenue2__Actual_Amount_Override__c += usageInput.Apttus_Billing__RatedAmount__c;
+                        } else {
+                            agreementFeeSch.Apttus_Revenue2__Actual_Amount_Override__c = usageInput.Apttus_Billing__RatedAmount__c;
+                        }
+                        agreementFeeSch.Apttus_Revenue2__Actual_Amount__c = agreementFeeSch.Apttus_Revenue2__Actual_Amount_Override__c;
+                        agreementFeeSchmap.put(agreementFeeSch.ID, agreementFeeSch);
+                    }
+                }
+            }
+        }
+    }
+
+    @testvisible
+    private static void updateUsageOnAgreementFee(List <Apttus_Billing__UsageInput__c> newUsageInputList, Map <Id, Apttus_Billing__UsageInput__c> newUsageInputMap, Map <Id, Apttus_Billing__UsageInput__c> oldUsageInputMap) {
+        Set <Id> agreementFeeIdSet = new Set <Id> ();
+        for (Apttus_Billing__UsageInput__c usageInput: newUsageInputList) {
+            if (usageInput.APTS_AgreementFeeId__c != null && newlyInsertedAgreementFeeIds.contains(usageInput.APTS_AgreementFeeId__c) && usageInput.APTS_Company__c == 'Bluemix' && usageInput.Apttus_Billing__RatedAmount__c < 0) {
+                revenueAdjustmentsMap.put(usageInput.Id, usageInput.APTS_AgreementFeeId__c);
+            }
+
+            agreementFeeIdSet.add(usageInput.APTS_AgreementFeeId__c);
+        }
+        updateUsageOnAgreementFeeHelper(newUsageInputList, newUsageInputMap, oldUsageInputMap, new Map <Id, Apttus_Revenue2__Agreement_Fee__c> ([SELECT Id, Apttus_Revenue2__Fixed_End_Date__c, Apttus_Revenue2__Fixed_Start_Date__c, (SELECT Id, Apttus_Revenue2__Period_Date__c, Apttus_Revenue2__Period_Number__c, Apttus_Revenue2__Actual_Amount_Override__c, Apttus_Revenue2__Actual_Amount__c, Apttus_Revenue2__Comments__c FROM Apttus_Revenue2__Agreement_Fee_Schedules__r) FROM Apttus_Revenue2__Agreement_Fee__c WHERE Id =: agreementFeeIdSet]));
+    }
+
+    @testvisible
+    private static void updateUsageOnAgreementFeeHelper(List <Apttus_Billing__UsageInput__c> newUsageInputList, Map <Id, Apttus_Billing__UsageInput__c> newUsageInputMap, Map <Id, Apttus_Billing__UsageInput__c> oldUsageInputMap, Map <Id, Apttus_Revenue2__Agreement_Fee__c> agreementFeeMap) {
+        List <Apttus_Revenue2__Agreement_Fee_Schedule__c> agreementFeeSchList = new List <Apttus_Revenue2__Agreement_Fee_Schedule__c> ();
+        Map <ID, Apttus_Revenue2__Agreement_Fee_Schedule__c> agreementFeeSchmap = new Map <ID, Apttus_Revenue2__Agreement_Fee_Schedule__c> (); //Shubham: Instead of list, lets use map so that it handles the duplicate IDs of agreementFeeSch
+
+        for (Apttus_Billing__UsageInput__c usageInput: newUsageInputList) {
+            Apttus_Billing__UsageInput__c oldUsageInput;
+            if (oldUsageInputMap != NULL && oldUsageInputMap.get(usageInput.Id) != NULL) {
+                oldUsageInput = oldUsageInputMap.get(usageInput.Id);
+            }
+
+            Apttus_Revenue2__Agreement_Fee__c agreementFee = agreementFeeMap.get(usageInput.APTS_AgreementFeeId__c);
+            if (agreementFee != null) {
+                updateUsageOnAgreementFeeCont(usageInput, oldUsageInput, agreementFee, agreementFeeSchmap);
+            }
+        }
+        if (!agreementFeeSchmap.isEmpty()) {
+            update agreementFeeSchmap.values();
+        }
+    }
+
+    /*public static void showDeleteError(List <Apttus_Billing__UsageInput__c> oldUsageInputList) {
+        for (Apttus_Billing__UsageInput__c usageInput: oldUsageInputList) {
+            if (usageInput.APTS_Company__c == 'Bluemix') {
+                usageInput.addError('Deletion of Bluemix usage inputs is not allowed.');
+            }
+        }
+    }
+
+    class UsageInputTriggerException extends exception {} */
+}
